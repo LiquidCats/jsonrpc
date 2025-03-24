@@ -15,10 +15,10 @@ A lightweight and efficient JSON-RPC 2.0 client library for Go. This library sim
 Install the package using Go modules:
 
 ```bash
-go get github.com/yourusername/json-rpc-client
+go get github.com/LiquidCats/jsonrpc
 ```
 
-*Replace `github.com/yourusername/json-rpc-client` with the actual repository path.*
+*Replace `github.com/LiquidCats/jsonrpc` with the actual repository path.*
 
 ## Usage
 
