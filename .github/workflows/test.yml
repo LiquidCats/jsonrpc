@@ -15,7 +15,8 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v5
       with:
-        go-version: '1.24.3'
+        cache: 'true'
+        go-version: '1.24.1'
 
     - name: Test
       run: go test -v ./...
