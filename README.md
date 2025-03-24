@@ -18,8 +18,6 @@ Install the package using Go modules:
 go get github.com/LiquidCats/jsonrpc
 ```
 
-*Replace `github.com/LiquidCats/jsonrpc` with the actual repository path.*
-
 ## Usage
 
 ### Preparing a Request
