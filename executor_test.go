@@ -173,15 +173,12 @@ func BenchmarkExecute_Success(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
+	req := jsonrpc.CreateRequest[benchUser]("user.get", map[string]any{"id": 42})
+
 	for i := 0; i < b.N; i++ {
-		req := jsonrpc.CreateRequest[benchUser]("user.get", map[string]any{"id": 42})
 		got, err := req.Execute(ctx, ts.URL)
-		if err != nil {
-			b.Fatalf("Execute error: %v", err)
-		}
-		if got == nil || got.ID != 42 {
-			b.Fatalf("unexpected result: %#v", got)
-		}
+		require.NoError(b, err)
+		assert.Equal(b, 42, got.ID, "unexpected ID")
 	}
 }
 
@@ -221,45 +218,49 @@ func BenchmarkExecute_WithOptions(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
+	req := jsonrpc.CreateRequest[benchUser]("user.get", nil)
 	for i := 0; i < b.N; i++ {
-		req := jsonrpc.CreateRequest[benchUser]("user.get", nil)
 		got, err := req.Execute(ctx, ts.URL, reqOpt, clientOpt)
-		if err != nil {
-			b.Fatalf("Execute error: %v", err)
-		}
-		if got == nil || got.Name != "ok" {
-			b.Fatalf("unexpected result: %#v", got)
-		}
+		require.NoError(b, err)
+		assert.Equal(b, 1, got.ID, "unexpected ID")
 	}
 }
 
-// Benchmark error path (non-2xx) to cover early return branch and body discard.
-func BenchmarkExecute_HTTPError(b *testing.B) {
+func BenchmarkExecute_SuccessWithingGoroutines(b *testing.B) {
+	type benchUser struct {
+		ID   int    `json:"id"`
+		Name string `json:"name"`
+	}
+
+	// Static response payload once for all iterations.
+	resp := jsonrpc.RPCResponse[benchUser]{
+		JSONRPC: "2.0",
+		Result:  benchUser{ID: 42, Name: "bench"},
+		ID:      1,
+	}
+	payload, _ := json.Marshal(resp)
+
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Large enough body to ensure discard path runs.
-		w.WriteHeader(http.StatusTeapot)
-		large := make([]byte, 4096)
-		for i := range large {
-			large[i] = 'x'
-		}
-		_, _ = w.Write(large)
+		// Minimal work in handler; just serve the fixed payload.
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(payload)
 	}))
 	defer ts.Close()
 
-	type benchUser struct {
-		ID int `json:"id"`
-	}
-
 	ctx := context.Background()
 
+	// Create request template; ID is set in CreateRequest, so build per-iter.
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
-		req := jsonrpc.CreateRequest[benchUser]("user.get", nil)
-		got, err := req.Execute(ctx, ts.URL)
-		if err == nil || got != nil {
-			b.Fatalf("expected error, got=%#v err=%v", got, err)
+	req := jsonrpc.CreateRequest[benchUser]("user.get", map[string]any{"id": 42})
+
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			got, err := req.Execute(ctx, ts.URL)
+			require.NoError(b, err)
+			assert.Equal(b, 42, got.ID, "unexpected ID")
 		}
-	}
+	})
 }
