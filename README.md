@@ -1,14 +1,15 @@
 # JSON-RPC Client for Go
 
-A lightweight and efficient JSON-RPC 2.0 client library for Go. This library simplifies the process of preparing and executing JSON-RPC requests over HTTP, utilizing the high-performance JSON encoder/decoder from [sonic](https://github.com/bytedance/sonic) and robust error handling with [go-faster/errors](https://github.com/go-faster/errors).
+A lightweight and efficient JSON-RPC 2.0 client library for Go. This library simplifies the process of creating and executing JSON-RPC requests over HTTP, utilizing the high-performance JSON encoder/decoder from [sonic](https://github.com/bytedance/sonic) and robust error handling with [eris](https://github.com/rotisserie/eris).
 
 ## Features
 
 - **JSON-RPC 2.0 Compliance:** Easily create and handle JSON-RPC 2.0 requests.
-- **Simple Request Preparation:** Use the `Prepare` function to generate HTTP requests with JSON-RPC payloads.
-- **Efficient Execution:** Send JSON-RPC requests using the standard `http` package and decode responses seamlessly.
-- **Robust Error Handling:** Errors are wrapped with additional context to aid in debugging.
+- **Flexible Options:** Support for custom HTTP clients, headers, and contexts.
+- **Efficient Execution:** Send JSON-RPC requests with optimized connection pooling and buffer management.
+- **Robust Error Handling:** Errors are wrapped with additional context using eris to aid in debugging.
 - **High Performance:** Leverages [sonic](https://github.com/bytedance/sonic) for fast JSON encoding/decoding.
+- **Production-Ready HTTP Client:** Pre-configured with optimized timeouts, connection pooling, and HTTP/2 support.
 
 ## Installation
 
@@ -20,45 +21,42 @@ go get github.com/LiquidCats/jsonrpc
 
 ## Usage
 
-### Preparing a Request
+### Basic Usage
 
-The `Prepare` function creates an HTTP POST request with a JSON-RPC payload. Below is an example demonstrating how to prepare a request:
+The simplest way to use the library is to create a request and execute it:
 
 ```go
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 
-	"github.com/LiquidCats/jsonrpc" // adjust the import path according to your project structure
+	"github.com/LiquidCats/jsonrpc"
 )
 
 func main() {
-	// Define the parameters for the JSON-RPC call.
+	// Define the parameters for the JSON-RPC call
 	type Params struct {
 		Value int `json:"value"`
 	}
 
-	params := Params{Value: 123}
-	url := "http://yours.rpc"
-	method := "exampleMethod"
+	// Create a JSON-RPC request expecting a string result
+	req := jsonrpc.CreateRequest[string]("exampleMethod", Params{Value: 123})
 
-	// Prepare the JSON-RPC request.
-	req, err := jsonrpc.Prepare(context.Background(), url, method, params)
+	// Execute the request
+	result, err := req.Execute("https://your.rpc")
 	if err != nil {
-		log.Fatalf("Failed to prepare request: %v", err)
+		log.Fatalf("Request failed: %v", err)
 	}
 
-	fmt.Println("Request prepared successfully.")
-	// The request can now be sent using the Execute function.
+	fmt.Printf("Received result: %s\n", *result)
 }
 ```
 
-### Executing a Request
+### Using Options
 
-Once a request is prepared, use the `Execute` function to send the request and decode the response. The function returns a pointer to the result if the request was successful, or an error if it failed.
+You can customize requests using options for headers, custom HTTP clients, or contexts:
 
 ```go
 package main
@@ -67,29 +65,30 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
+	"time"
 
-	"github.com/LiquidCats/jsonrpc" // adjust the import path according to your project structure
+	"github.com/LiquidCats/jsonrpc"
 )
 
 func main() {
-	// Prepare a request (parameters and method details)
-	type Params struct {
-		Value int `json:"value"`
+	// Create a custom HTTP client
+	customClient := &http.Client{
+		Timeout: 10 * time.Second,
 	}
 
-	params := Params{Value: 123}
-	url := "https://your.rpc"
-	method := "exampleMethod"
+	// Create a request
+	req := jsonrpc.CreateRequest[string]("exampleMethod", map[string]int{"value": 123})
 
-	req, err := jsonrpc.Prepare(context.Background(), url, method, params)
+	// Execute with options
+	result, err := req.Execute(
+		"https://your.rpc",
+		jsonrpc.UseClient(customClient),
+		jsonrpc.SetHeader("Authorization", "Bearer token"),
+		jsonrpc.UseContext(context.WithValue(context.Background(), "key", "value")),
+	)
 	if err != nil {
-		log.Fatalf("Failed to prepare request: %v", err)
-	}
-
-	// Execute the JSON-RPC request. For example, expecting a result of type string.
-	result, err := jsonrpc.Execute[string](req)
-	if err != nil {
-		log.Fatalf("Request execution failed: %v", err)
+		log.Fatalf("Request failed: %v", err)
 	}
 
 	fmt.Printf("Received result: %s\n", *result)
@@ -98,53 +97,46 @@ func main() {
 
 ## Examples
 
-### Successful Request Example
-
-This example demonstrates a complete flow where a JSON-RPC request is prepared and executed successfully. It assumes the server responds with a valid JSON-RPC result.
+### Working with Complex Types
 
 ```go
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 
-	"github.com/LiquidCats/jsonrpc" // adjust the import path accordingly
+	"github.com/LiquidCats/jsonrpc"
 )
 
+type BlockResult struct {
+	Number     string   `json:"number"`
+	Hash       string   `json:"hash"`
+	ParentHash string   `json:"parentHash"`
+	Timestamp  string   `json:"timestamp"`
+}
+
 func main() {
-	// Define parameters (if any)
-	type Params struct {
-		Value int `json:"value"`
-	}
-	params := Params{Value: 456}
+	// Request a block by number
+	req := jsonrpc.CreateRequest[BlockResult]("eth_getBlockByNumber", []any{"latest", false})
 
-	// Prepare the JSON-RPC request
-	req, err := jsonrpc.Prepare(context.Background(), "https://your.rpc", "testMethod", params)
+	result, err := req.Execute("https://eth.llamarpc.com")
 	if err != nil {
-		log.Fatalf("Error preparing request: %v", err)
+		log.Fatalf("Error: %v", err)
 	}
 
-	// Execute the request expecting a string result
-	result, err := jsonrpc.Execute[string](req)
-	if err != nil {
-		log.Fatalf("Error executing request: %v", err)
-	}
-
-	fmt.Printf("Server response: %s\n", *result)
+	fmt.Printf("Block #%s: %s\n", result.Number, result.Hash)
 }
 ```
 
-### Error Handling Example
+### Error Handling
 
-This example shows how to handle errors when the JSON-RPC response contains an error.
+The library automatically handles JSON-RPC errors and HTTP errors:
 
 ```go
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 
@@ -152,51 +144,81 @@ import (
 )
 
 func main() {
-	// Prepare a JSON-RPC request with dummy parameters
-	type Params struct{}
-	params := Params{}
+	req := jsonrpc.CreateRequest[string]("invalidMethod", nil)
 
-	req, err := jsonrpc.Prepare(context.Background(), "https://yuor.rpc", "errorMethod", params)
+	result, err := req.Execute("https://your.rpc")
 	if err != nil {
-		log.Fatalf("Error preparing request: %v", err)
+		// Error will include context about where it occurred
+		fmt.Printf("Request failed: %v\n", err)
+		return
 	}
 
-	// Execute the request, expecting an error
-	result, err := jsonrpc.Execute[string](req)
-	if err != nil {
-		fmt.Printf("Received expected error: %v\n", err)
-	} else {
-		log.Fatalf("Expected error, but got result: %v", *result)
-	}
+	fmt.Printf("Result: %s\n", *result)
 }
 ```
 
 ## API Reference
 
-### `Prepare`
+### `CreateRequest`
 
 ```go
-func Prepare[P any](ctx context.Context, url, method string, params P) (*http.Request, error)
+func CreateRequest[Result any](method string, params any) *RPCRequest[Result]
 ```
 
-- **Description:** Constructs an HTTP POST request with a JSON-RPC compliant payload.
+- **Description:** Creates a new JSON-RPC 2.0 request with the specified method and parameters.
 - **Parameters:**
-    - `ctx`: The context for the HTTP request.
-    - `url`: The target endpoint URL.
     - `method`: The JSON-RPC method to be invoked.
-    - `params`: The parameters to be included in the JSON-RPC request.
-- **Returns:** A pointer to an `http.Request` or an error if the request could not be constructed.
+    - `params`: The parameters to be included in the JSON-RPC request (can be any type).
+- **Returns:** A pointer to an `RPCRequest` with the specified result type.
 
 ### `Execute`
 
 ```go
-func Execute[Result any](request *http.Request) (*Result, error)
+func (rpc *RPCRequest[Resp]) Execute(url string, opts ...any) (*Resp, error)
 ```
 
-- **Description:** Sends the prepared HTTP request, decodes the JSON-RPC response, and handles any errors.
+- **Description:** Executes the JSON-RPC request against the specified URL and decodes the response.
 - **Parameters:**
-    - `request`: The HTTP request created by `Prepare`.
-- **Returns:** A pointer to the decoded result or an error if the execution or decoding fails.
+    - `url`: The target endpoint URL.
+    - `opts`: Optional configuration functions for customizing the request.
+- **Returns:** A pointer to the decoded result or an error if the execution fails.
+
+### Option Functions
+
+#### `UseClient`
+
+```go
+func UseClient(cli *http.Client) func(in *http.Client)
+```
+
+- **Description:** Sets a custom HTTP client for the request.
+
+#### `SetHeader`
+
+```go
+func SetHeader(key, value string) func(in *http.Request)
+```
+
+- **Description:** Adds or sets a header on the HTTP request.
+
+#### `UseContext`
+
+```go
+func UseContext(ctx context.Context) func(in *http.Request)
+```
+
+- **Description:** Sets a context for the HTTP request.
+
+## Performance Features
+
+The library includes several performance optimizations:
+
+- **Connection Pooling:** Pre-configured with up to 4,096 idle connections and 1,024 per host
+- **Buffer Pooling:** Reuses buffers to reduce memory allocations
+- **HTTP/2 Support:** Enabled by default for multiplexing
+- **Compression:** Enabled to reduce bandwidth for large JSON responses
+- **Optimized Timeouts:** Carefully tuned connection and TLS handshake timeouts
+- **Large Buffer Sizes:** 64KB read/write buffers for efficient handling of large responses
 
 ## Contributing
 
@@ -209,4 +231,4 @@ This project is licensed under the GNU Affero General Public License v3.0 - see 
 ## Acknowledgements
 
 - **[sonic](https://github.com/bytedance/sonic):** For providing high-performance JSON encoding and decoding.
-- **[go-faster/errors](https://github.com/go-faster/errors):** For enhanced error handling support.
+- **[eris](https://github.com/rotisserie/eris):** For enhanced error handling with stack traces and context wrapping.

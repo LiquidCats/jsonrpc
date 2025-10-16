@@ -1,86 +1,47 @@
 package jsonrpc
 
 import (
-	"bytes"
-	"context"
-	"fmt"
+	"crypto/tls"
+	"net"
 	"net/http"
 	"time"
-
-	"github.com/bytedance/sonic"
-	"github.com/go-faster/errors"
 )
 
-type RPCResponse[D any] struct {
-	JSONRPC string    `json:"jsonrpc"`
-	Result  D         `json:"result"`
-	Error   *RPCError `json:"error,omitempty"`
-	ID      any       `json:"id"`
-}
+var defaultHTTPClient = &http.Client{
+	Transport: &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   5 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2: true,
 
-type RPCError struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-}
+		// Large response tuning: allow many idle conns but cap concurrency
+		MaxIdleConns:        4_096,
+		MaxIdleConnsPerHost: 1_024,
+		MaxConnsPerHost:     512, // cap to bound memory while handling many large bodies
 
-func (e *RPCError) Error() string {
-	return fmt.Sprintf("jsonrpc error: code=%d, message=%s", e.Code, e.Message)
-}
+		// Keep generous idle timeout for reuse; large responses take longer
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   5 * time.Second,
+		ExpectContinueTimeout: 250 * time.Millisecond,
 
-type RPCRequest[P any] struct {
-	Method  string `json:"method"`
-	Params  P      `json:"params,omitempty"`
-	ID      int64  `json:"id"`
-	JSONRPC string `json:"jsonrpc"`
-}
+		// Enable compression to save bandwidth for multi-MB JSON; CPU tradeoff
+		DisableCompression: false,
 
-func createRequest[P any](method string, params P) *RPCRequest[P] {
-	return &RPCRequest[P]{
-		ID:      time.Now().UnixMilli(),
-		Method:  method,
-		JSONRPC: "2.0",
-		Params:  params,
-	}
-}
+		// Increase per-connection IO buffers to reduce syscalls for large bodies
+		// Defaults are 4KB; bump to 64KB (common page multiple).
+		ReadBufferSize:  64 << 10,
+		WriteBufferSize: 64 << 10,
 
-type Request = http.Request
+		// TLS session cache to lower handshake CPU when many connections exist
+		TLSClientConfig: &tls.Config{
+			MinVersion:         tls.VersionTLS12,
+			ClientSessionCache: tls.NewLRUClientSessionCache(4096),
+		},
 
-func Prepare[P any](ctx context.Context, url, method string, params P) (*Request, error) {
-	buff := bytes.NewBuffer([]byte{})
-
-	encoder := sonic.ConfigDefault.NewEncoder(buff)
-	if err := encoder.Encode(createRequest[P](method, params)); err != nil {
-		return nil, errors.Wrap(err, "encode request")
-	}
-
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, url, buff)
-	if err != nil {
-		return nil, errors.Wrap(err, "new request")
-	}
-
-	return request, nil
-}
-
-func Execute[Result any](request *Request) (*Result, error) {
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
-		return nil, errors.Wrap(err, "execute request")
-	}
-
-	decoder := sonic.ConfigDefault.NewDecoder(response.Body)
-	defer func() {
-		_ = response.Body.Close()
-	}()
-
-	var result RPCResponse[Result]
-
-	if err = decoder.Decode(&result); err != nil {
-		return nil, errors.Wrap(err, "decode response")
-	}
-
-	if result.Error != nil {
-		return nil, result.Error
-	}
-
-	return &result.Result, nil
+		// HTTP/2: raise concurrent streams per connection for multiplexing large responses
+		// (Go picks defaults; env GODEBUG may tune; leaving default to avoid incompat issues)
+	},
+	Timeout: 0,
 }
