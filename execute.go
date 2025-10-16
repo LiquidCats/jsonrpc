@@ -17,10 +17,6 @@ var bufferPool = sync.Pool{
 	},
 }
 
-type Option func()
-type RequestOption func(in *http.Request)
-type ClientOption func(in *http.Client)
-
 func (rpc *RPCRequest[Resp]) Execute(ctx context.Context, url string, opts ...any) (*Resp, error) {
 	buf := bufferPool.Get().(*bytes.Buffer)
 	buf.Reset()
@@ -42,9 +38,9 @@ func (rpc *RPCRequest[Resp]) Execute(ctx context.Context, url string, opts ...an
 	cl := http.DefaultClient
 	for _, opt := range opts {
 		switch v := opt.(type) {
-		case RequestOption:
+		case func(in *http.Request):
 			v(req)
-		case ClientOption:
+		case func(in *http.Client):
 			v(cl)
 		}
 	}

@@ -68,4 +68,4 @@ jobs:
       - name: Test
         run: |
           export SONIC_NO_ASYNC_GC=1
-          go test -race -v ./... -bench -benchmem . -run ^$ -count=20 -benchtime=10s
+          go test -run ^$ -count=20 -benchmem -bench .
