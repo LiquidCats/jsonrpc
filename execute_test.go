@@ -7,10 +7,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/LiquidCats/jsonrpc/tests/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -144,62 +146,44 @@ func TestExecute_DecodeError(t *testing.T) {
 	assert.Nil(t, got)
 }
 
-// Benchmark the happy-path Execute against a local httptest server.
 func BenchmarkExecute_Success(b *testing.B) {
-	type benchUser struct {
-		ID   int    `json:"id"`
-		Name string `json:"name"`
-	}
-
-	// Static response payload once for all iterations.
-	resp := jsonrpc.RPCResponse[benchUser]{
-		JSONRPC: "2.0",
-		Result:  benchUser{ID: 42, Name: "bench"},
-		ID:      1,
-	}
-	payload, _ := json.Marshal(resp)
+	file, err := os.ReadFile("tests/fixtures/btc-block-without-txs.json")
+	require.NoError(b, err)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Minimal work in handler; just serve the fixed payload.
+		_, _ = io.Copy(io.Discard, r.Body)
+		_ = r.Body.Close()
+
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(payload)
+
+		_, _ = w.Write(file)
 	}))
 	defer ts.Close()
 
 	ctx := context.Background()
+	req := jsonrpc.CreateRequest[types.Block]("user.get", map[string]any{"id": 42})
 
-	// Create request template; ID is set in CreateRequest, so build per-iter.
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	req := jsonrpc.CreateRequest[benchUser]("user.get", map[string]any{"id": 42})
-
 	for i := 0; i < b.N; i++ {
-		got, err := req.Execute(ctx, ts.URL)
+		_, err := req.Execute(ctx, ts.URL)
 		require.NoError(b, err)
-		assert.Equal(b, 42, got.ID, "unexpected ID")
 	}
 }
 
-// Benchmark with request and client options to measure overhead of opts path.
 func BenchmarkExecute_WithOptions(b *testing.B) {
-	type benchUser struct {
-		ID   int    `json:"id"`
-		Name string `json:"name"`
-	}
-
-	resp := jsonrpc.RPCResponse[benchUser]{
-		JSONRPC: "2.0",
-		Result:  benchUser{ID: 1, Name: "ok"},
-		ID:      1,
-	}
-	payload, _ := json.Marshal(resp)
+	file, err := os.ReadFile("tests/fixtures/btc-block-without-txs.json")
+	require.NoError(b, err)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// echo normal 200 with json body
+		_, _ = io.Copy(io.Discard, r.Body)
+		_ = r.Body.Close()
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write(payload)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(file)
 	}))
 	defer ts.Close()
 
@@ -209,58 +193,44 @@ func BenchmarkExecute_WithOptions(b *testing.B) {
 	}
 	// Lightweight client option
 	clientOpt := func(c *http.Client) {
-		// touch a field to exercise the code path
-		_ = c.Timeout
+		c.Timeout = 30 * time.Second
 	}
 
 	ctx := context.Background()
+	req := jsonrpc.CreateRequest[types.Block]("user.get", nil)
 
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	req := jsonrpc.CreateRequest[benchUser]("user.get", nil)
 	for i := 0; i < b.N; i++ {
-		got, err := req.Execute(ctx, ts.URL, reqOpt, clientOpt)
+		_, err := req.Execute(ctx, ts.URL, reqOpt, clientOpt)
 		require.NoError(b, err)
-		assert.Equal(b, 1, got.ID, "unexpected ID")
 	}
 }
 
-func BenchmarkExecute_SuccessWithingGoroutines(b *testing.B) {
-	type benchUser struct {
-		ID   int    `json:"id"`
-		Name string `json:"name"`
-	}
-
-	// Static response payload once for all iterations.
-	resp := jsonrpc.RPCResponse[benchUser]{
-		JSONRPC: "2.0",
-		Result:  benchUser{ID: 42, Name: "bench"},
-		ID:      1,
-	}
-	payload, _ := json.Marshal(resp)
+func BenchmarkExecute_Parallel(b *testing.B) {
+	file, err := os.ReadFile("tests/fixtures/btc-block-without-txs.json")
+	require.NoError(b, err)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Minimal work in handler; just serve the fixed payload.
+		_, _ = io.Copy(io.Discard, r.Body)
+		_ = r.Body.Close()
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(payload)
+		_, _ = w.Write(file)
 	}))
 	defer ts.Close()
 
 	ctx := context.Background()
+	req := jsonrpc.CreateRequest[types.Block]("user.get", map[string]any{"id": 42})
 
-	// Create request template; ID is set in CreateRequest, so build per-iter.
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	req := jsonrpc.CreateRequest[benchUser]("user.get", map[string]any{"id": 42})
-
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			got, err := req.Execute(ctx, ts.URL)
+			_, err := req.Execute(ctx, ts.URL)
 			require.NoError(b, err)
-			assert.Equal(b, 42, got.ID, "unexpected ID")
 		}
 	})
 }
