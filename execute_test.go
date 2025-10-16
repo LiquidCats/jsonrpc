@@ -2,7 +2,6 @@ package jsonrpc_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -47,7 +46,7 @@ func TestExecute_Success(t *testing.T) {
 	defer ts.Close()
 
 	req := jsonrpc.CreateRequest[user]("user.get", map[string]any{"id": 7})
-	got, err := req.Execute(context.Background(), ts.URL)
+	got, err := req.Execute(ts.URL)
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	assert.Equal(t, 7, got.ID)
@@ -71,7 +70,7 @@ func TestExecute_JSONRPCErrorInBody(t *testing.T) {
 	defer ts.Close()
 
 	req := jsonrpc.CreateRequest[user]("user.get", nil)
-	got, err := req.Execute(context.Background(), ts.URL)
+	got, err := req.Execute(ts.URL)
 	require.Error(t, err)
 	assert.Nil(t, got)
 	assert.Equal(t, "jsonrpc error: code=-32001, message=backend unavailable", err.Error())
@@ -86,7 +85,7 @@ func TestExecute_HTTPNon2xx(t *testing.T) {
 	defer ts.Close()
 
 	req := jsonrpc.CreateRequest[user]("user.get", nil)
-	got, err := req.Execute(context.Background(), ts.URL)
+	got, err := req.Execute(ts.URL)
 	require.Error(t, err)
 	assert.Nil(t, got)
 	assert.Contains(t, err.Error(), "http status 418")
@@ -115,7 +114,7 @@ func TestExecute_RequestAndClientOptions(t *testing.T) {
 	}
 
 	req := jsonrpc.CreateRequest[user]("user.get", nil)
-	got, err := req.Execute(context.Background(), ts.URL, reqOpt, clientOpt)
+	got, err := req.Execute(ts.URL, reqOpt, clientOpt, jsonrpc.UseContext(t.Context()))
 	require.NoError(t, err)
 	require.NotNil(t, got)
 	assert.True(t, sawHeader.Load(), "request option did not set header")
@@ -131,7 +130,7 @@ func TestExecute_DecodeError(t *testing.T) {
 	defer ts.Close()
 
 	req := jsonrpc.CreateRequest[user]("user.get", nil)
-	got, err := req.Execute(context.Background(), ts.URL)
+	got, err := req.Execute(ts.URL)
 	require.Error(t, err)
 	assert.Nil(t, got)
 }
@@ -152,14 +151,13 @@ func BenchmarkExecute_Success(b *testing.B) {
 	}))
 	defer ts.Close()
 
-	ctx := context.Background()
 	req := jsonrpc.CreateRequest[types.Block]("user.get", map[string]any{"id": 42})
 
 	b.ReportAllocs()
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := req.Execute(ctx, ts.URL)
+		_, err := req.Execute(ts.URL)
 		require.NoError(b, err)
 	}
 }
@@ -186,14 +184,13 @@ func BenchmarkExecute_WithOptions(b *testing.B) {
 		c.Timeout = 30 * time.Second
 	}
 
-	ctx := context.Background()
 	req := jsonrpc.CreateRequest[types.Block]("user.get", nil)
 
 	b.ReportAllocs()
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, err := req.Execute(ctx, ts.URL, reqOpt, clientOpt)
+		_, err := req.Execute(ts.URL, reqOpt, clientOpt, jsonrpc.UseContext(b.Context()))
 		require.NoError(b, err)
 	}
 }
@@ -211,7 +208,6 @@ func BenchmarkExecute_Parallel(b *testing.B) {
 	}))
 	defer ts.Close()
 
-	ctx := context.Background()
 	req := jsonrpc.CreateRequest[types.Block]("user.get", map[string]any{"id": 42})
 
 	b.ReportAllocs()
@@ -219,7 +215,7 @@ func BenchmarkExecute_Parallel(b *testing.B) {
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			_, err := req.Execute(ctx, ts.URL)
+			_, err := req.Execute(ts.URL, jsonrpc.UseContext(b.Context()))
 			require.NoError(b, err)
 		}
 	})
