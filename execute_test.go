@@ -25,8 +25,6 @@ type user struct {
 }
 
 func TestExecute_Success(t *testing.T) {
-	t.Parallel()
-
 	resp := jsonrpc.RPCResponse[user]{
 		JSONRPC: "2.0",
 		Result:  user{ID: 7, Name: "alice"},
@@ -57,8 +55,6 @@ func TestExecute_Success(t *testing.T) {
 }
 
 func TestExecute_JSONRPCErrorInBody(t *testing.T) {
-	t.Parallel()
-
 	resp := jsonrpc.RPCResponse[user]{
 		JSONRPC: "2.0",
 		Error:   &jsonrpc.RPCError{Code: -32001, Message: "backend unavailable"},
@@ -82,8 +78,6 @@ func TestExecute_JSONRPCErrorInBody(t *testing.T) {
 }
 
 func TestExecute_HTTPNon2xx(t *testing.T) {
-	t.Parallel()
-
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusTeapot)
@@ -99,8 +93,6 @@ func TestExecute_HTTPNon2xx(t *testing.T) {
 }
 
 func TestExecute_RequestAndClientOptions(t *testing.T) {
-	t.Parallel()
-
 	var sawHeader atomic.Bool
 	const customUA = "my-agent/1.0"
 	var clientUsed atomic.Bool
@@ -132,8 +124,6 @@ func TestExecute_RequestAndClientOptions(t *testing.T) {
 }
 
 func TestExecute_DecodeError(t *testing.T) {
-	t.Parallel()
-
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("{not-json"))
