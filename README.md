@@ -1,29 +1,29 @@
-# JSON-RPC Client for Go
+# JSON‑RPC Client for Go
 
-A lightweight and efficient JSON-RPC 2.0 client library for Go. This library simplifies the process of creating and executing JSON-RPC requests over HTTP, utilizing the high-performance JSON encoder/decoder from [sonic](https://github.com/bytedance/sonic) and robust error handling with [eris](https://github.com/rotisserie/eris).
+A lightweight, type‑safe client that implements the JSON‑RPC 2.0 specification over HTTP.  
+It uses the high‑performance **sonic** JSON library for encoding/decoding and
+the robust **eris** package for error handling.
 
 ## Features
 
-- **JSON-RPC 2.0 Compliance:** Easily create and handle JSON-RPC 2.0 requests.
-- **Flexible Options:** Support for custom HTTP clients, headers, and contexts.
-- **Efficient Execution:** Send JSON-RPC requests with optimized connection pooling and buffer management.
-- **Robust Error Handling:** Errors are wrapped with additional context using eris to aid in debugging.
-- **High Performance:** Leverages [sonic](https://github.com/bytedance/sonic) for fast JSON encoding/decoding.
-- **Production-Ready HTTP Client:** Pre-configured with optimized timeouts, connection pooling, and HTTP/2 support.
+- Fully typed requests & responses via generics.
+- Zero‑alloc JSON with *sonic*.
+- Extensible options: request‑level (headers, context, content‑type) and client‑level.
+- Production‑ready HTTP client with tuned timeouts, connection pooling and HTTP/2.
+- Rich error handling: JSON‑RPC errors are wrapped in `jsonrpc.RPCError`.
 
 ## Installation
 
-Install the package using Go modules:
-
 ```bash
-go get github.com/LiquidCats/jsonrpc
+go get github.com/LiquidCats/jsonrpc/v2
 ```
+
+> The module is published under the `v2` path. Use that import path in your
+> projects.
 
 ## Usage
 
-### Basic Usage
-
-The simplest way to use the library is to create a request and execute it:
+### 1. Create a request
 
 ```go
 package main
@@ -32,203 +32,146 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/LiquidCats/jsonrpc"
+	"github.com/LiquidCats/jsonrpc/v2"
 )
 
 func main() {
-	// Define the parameters for the JSON-RPC call
-	type Params struct {
-		Value int `json:"value"`
-	}
+	type Params struct{ Value int }
 
-	// Create a JSON-RPC request expecting a string result
-	req := jsonrpc.CreateRequest[string]("exampleMethod", Params{Value: 123})
-
-	// Execute the request
-	result, err := req.Execute("https://your.rpc")
-	if err != nil {
-		log.Fatalf("Request failed: %v", err)
-	}
-
-	fmt.Printf("Received result: %s\n", *result)
-}
-```
-
-### Using Options
-
-You can customize requests using options for headers, custom HTTP clients, or contexts:
-
-```go
-package main
-
-import (
-	"context"
-	"fmt"
-	"log"
-	"net/http"
-	"time"
-
-	"github.com/LiquidCats/jsonrpc"
-)
-
-func main() {
-	// Create a custom HTTP client
-	customClient := &http.Client{
-		Timeout: 10 * time.Second,
-	}
-
-	// Create a request
-	req := jsonrpc.CreateRequest[string]("exampleMethod", map[string]int{"value": 123})
-
-	// Execute with options
-	result, err := req.Execute(
-		"https://your.rpc",
-		jsonrpc.UseClient(customClient),
-		jsonrpc.SetHeader("Authorization", "Bearer token"),
-		jsonrpc.UseContext(context.WithValue(context.Background(), "key", "value")),
+	// Create a request that expects a string result.
+	req := jsonrpc.NewRequest[Params, string](
+		"exampleMethod",
+		Params{Value: 123},
 	)
+
+	// Prepare the request for a specific endpoint.
+	pReq := req.Prepare("https://your.rpc")
+
+	// Execute with the library’s default HTTP client.
+	result, err := pReq.Execute(nil)
 	if err != nil {
-		log.Fatalf("Request failed: %v", err)
-	}
-
-	fmt.Printf("Received result: %s\n", *result)
-}
-```
-
-## Examples
-
-### Working with Complex Types
-
-```go
-package main
-
-import (
-	"fmt"
-	"log"
-
-	"github.com/LiquidCats/jsonrpc"
-)
-
-type BlockResult struct {
-	Number     string   `json:"number"`
-	Hash       string   `json:"hash"`
-	ParentHash string   `json:"parentHash"`
-	Timestamp  string   `json:"timestamp"`
-}
-
-func main() {
-	// Request a block by number
-	req := jsonrpc.CreateRequest[BlockResult]("eth_getBlockByNumber", []any{"latest", false})
-
-	result, err := req.Execute("https://eth.llamarpc.com")
-	if err != nil {
-		log.Fatalf("Error: %v", err)
-	}
-
-	fmt.Printf("Block #%s: %s\n", result.Number, result.Hash)
-}
-```
-
-### Error Handling
-
-The library automatically handles JSON-RPC errors and HTTP errors:
-
-```go
-package main
-
-import (
-	"fmt"
-	"log"
-
-	"github.com/LiquidCats/jsonrpc"
-)
-
-func main() {
-	req := jsonrpc.CreateRequest[string]("invalidMethod", nil)
-
-	result, err := req.Execute("https://your.rpc")
-	if err != nil {
-		// Error will include context about where it occurred
-		fmt.Printf("Request failed: %v\n", err)
-		return
+		log.Fatalf("request failed: %v", err)
 	}
 
 	fmt.Printf("Result: %s\n", *result)
 }
 ```
 
+### 2. Customising a request
+
+```go
+package main
+
+import (
+	"context"
+	"log"
+
+	"github.com/LiquidCats/jsonrpc/v2"
+)
+
+func main() {
+	req := jsonrpc.NewRequest[map[string]int, string](
+		"exampleMethod",
+		map[string]int{"value": 123},
+	)
+
+	pReq := req.Prepare(
+		"https://your.rpc",
+		jsonrpc.WithHeader("Authorization", "Bearer token"),
+		jsonrpc.WithContext(context.Background()),
+	)
+
+	result, err := pReq.Execute(nil)
+	if err != nil {
+		log.Fatalf("request failed: %v", err)
+	}
+
+	fmt.Printf("Result: %s\n", *result)
+}
+```
+
+### 3. Using a custom HTTP client
+
+```go
+package main
+
+import (
+	"net/http"
+	"time"
+
+	"github.com/LiquidCats/jsonrpc/v2"
+)
+
+func main() {
+	req := jsonrpc.NewRequest[struct{}, string]("ping", struct{}{})
+	pReq := req.Prepare("https://your.rpc")
+
+	// Custom client with a 10‑second timeout.
+	custom := &http.Client{Timeout: 10 * time.Second}
+
+	result, err := pReq.Execute(custom)
+	if err != nil {
+		panic(err)
+	}
+
+	println(*result)
+}
+```
+
 ## API Reference
 
-### `CreateRequest`
+### `NewRequest[Params any, Result any](method string, params Params) *rpcRequest[Params, Result]`
 
-```go
-func CreateRequest[Result any](method string, params any) *RPCRequest[Result]
-```
+Creates a new JSON‑RPC 2.0 request.
 
-- **Description:** Creates a new JSON-RPC 2.0 request with the specified method and parameters.
-- **Parameters:**
-    - `method`: The JSON-RPC method to be invoked.
-    - `params`: The parameters to be included in the JSON-RPC request (can be any type).
-- **Returns:** A pointer to an `RPCRequest` with the specified result type.
+| Parameter | Type   | Description          |
+|-----------|--------|----------------------|
+| `method`  | string | RPC method name.     |
+| `params`  | Params | Method parameters.   |
 
-### `Execute`
+### `(*rpcRequest[Params, Result]) Prepare(url string, opts ...PrepareOpt) *praparedRPCRequest[Result]`
 
-```go
-func (rpc *RPCRequest[Resp]) Execute(url string, opts ...any) (*Resp, error)
-```
+Prepares the request for a specific URL, applying any provided options.
 
-- **Description:** Executes the JSON-RPC request against the specified URL and decodes the response.
-- **Parameters:**
-    - `url`: The target endpoint URL.
-    - `opts`: Optional configuration functions for customizing the request.
-- **Returns:** A pointer to the decoded result or an error if the execution fails.
+| Parameter | Type          | Description                          |
+|-----------|---------------|--------------------------------------|
+| `url`     | string        | Target endpoint.                     |
+| `opts`    | ...PrepareOpt | Request‑level options (headers, etc).|
 
-### Option Functions
+### `(*praparedRPCRequest[Result]) Execute(client *http.Client, opts ...ExecuteOpt) (*Result, error)`
 
-#### `UseClient`
+Executes the prepared request.
 
-```go
-func UseClient(cli *http.Client) func(in *http.Client)
-```
+| Parameter | Type          | Description                                        |
+|-----------|---------------|----------------------------------------------------|
+| `client`  | *http.Client  | HTTP client to use; if nil, the library’s default is used. |
+| `opts`    | ...ExecuteOpt | Client‑level options (currently none).             |
 
-- **Description:** Sets a custom HTTP client for the request.
+### Request‑level option helpers
 
-#### `SetHeader`
+| Function | Signature | Description |
+|----------|-----------|-------------|
+| `WithContext(ctx context.Context)` | `func(context.Context) PrepareOpt` | Sets the request’s context. |
+| `WithHeader(key, value string)` | `func(string, string) PrepareOpt` | Adds or overrides an HTTP header. |
+| `WithContentType(contentType string)` | `func(string) PrepareOpt` | Sets the `Content‑Type` header. |
 
-```go
-func SetHeader(key, value string) func(in *http.Request)
-```
+### Error handling
 
-- **Description:** Adds or sets a header on the HTTP request.
+- JSON‑RPC errors returned by the server are wrapped in `jsonrpc.RPCError`, which implements the `error` interface.
+- HTTP status codes outside 2xx are returned as wrapped errors with the status code.
 
-#### `UseContext`
+## Performance Notes
 
-```go
-func UseContext(ctx context.Context) func(in *http.Request)
-```
-
-- **Description:** Sets a context for the HTTP request.
-
-## Performance Features
-
-The library includes several performance optimizations:
-
-- **Connection Pooling:** Pre-configured with up to 4,096 idle connections and 1,024 per host
-- **Buffer Pooling:** Reuses buffers to reduce memory allocations
-- **HTTP/2 Support:** Enabled by default for multiplexing
-- **Compression:** Enabled to reduce bandwidth for large JSON responses
-- **Optimized Timeouts:** Carefully tuned connection and TLS handshake timeouts
-- **Large Buffer Sizes:** 64KB read/write buffers for efficient handling of large responses
+- **Connection pooling**: up to 4096 idle connections, 1024 per host.
+- **Buffers**: 64 KB read/write buffers for efficient I/O.
+- **HTTP/2**: enabled by default; multiplexed streams per connection.
+- **Compression**: gzip/deflate automatically handled (`DisableCompression: false`).
+- **TLS session cache**: 4096 entries.
 
 ## Contributing
 
-Contributions are welcome! If you have suggestions, bug fixes, or improvements, please submit an issue or create a pull request.
+Feel free to open issues or pull requests. All contributions are welcome!
 
 ## License
 
-This project is licensed under the GNU Affero General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgements
-
-- **[sonic](https://github.com/bytedance/sonic):** For providing high-performance JSON encoding and decoding.
-- **[eris](https://github.com/rotisserie/eris):** For enhanced error handling with stack traces and context wrapping.
+This project is licensed under the GNU Affero General Public License v3.0 – see the [LICENSE](LICENSE) file for details.
