@@ -1,3 +1,7 @@
+Project was moved into mono repo: https://github.com/LiquidCats/paw
+
+**Current repository will be removed on 01.01.2027**
+
 # JSON‑RPC Client for Go
 
 A lightweight, type‑safe client that implements the JSON‑RPC 2.0 specification over HTTP.  
